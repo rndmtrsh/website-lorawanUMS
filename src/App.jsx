@@ -325,7 +325,7 @@ function LorawanDashboard() {
           >
             {LIMIT_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
-                {opt} terakhir
+                {opt}
               </option>
             ))}
           </select>
