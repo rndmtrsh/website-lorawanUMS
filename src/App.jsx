@@ -1,17 +1,75 @@
-import React, { useState } from "react";
+import React, { useState, useContext, createContext } from "react";
 import usersData from "../auth/users.json";
 import labteLogo from "./assets/labte.png";
-import { Routes, Route, Outlet, useNavigate, Link } from "react-router-dom";
+import { Routes, Route, Outlet, useNavigate, Link, Navigate } from "react-router-dom";
+
+// AuthContext for global auth state
+const AuthContext = createContext(null);
+
+function AuthProvider({ children }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    // Check if user is already logged in (from localStorage)
+    return localStorage.getItem("isLoggedIn") === "true";
+  });
+
+  const login = () => {
+    setIsAuthenticated(true);
+    localStorage.setItem("isLoggedIn", "true");
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem("isLoggedIn");
+  };
+
+  return (
+    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within AuthProvider");
+  }
+  return context;
+}
+
+// Protected Route Component
+function ProtectedRoute({ children }) {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
-    <Routes>
-      <Route element={<Shell />}>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/lorawan" element={<LorawanDashboard />} />
-      </Route>
-    </Routes>
+    <AuthProvider>
+      <Routes>
+        <Route element={<Shell />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/login-admin" element={<LoginAdmin />} />
+          <Route
+            path="/lorawan-admin"
+            element={
+              <ProtectedRoute>
+                <LorawanAdmin />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/lorawan"
+            element={
+              <ProtectedRoute>
+                <LorawanDashboard />
+              </ProtectedRoute>
+            }
+          />
+        </Route>
+      </Routes>
+    </AuthProvider>
   );
 }
 
@@ -33,7 +91,9 @@ function NavBar() {
   return (
     <nav className="nav">
       <div className="nav-left">
-        <img src={labteLogo} alt="LabTE logo" className="logo-mark" />
+        <Link to="/" aria-label="Kembali ke beranda" className="logo-link">
+          <img src={labteLogo} alt="LabTE logo" className="logo-mark" />
+        </Link>
         <div className="logo-text">
           <span className="logo-title">LoRaWAN UMS</span>
           <span className="logo-subtitle">
@@ -45,8 +105,8 @@ function NavBar() {
         <Link to="/" className="btn btn-outline btn-sm">
           Home
         </Link>
-        <Link to="/login" className="btn btn-primary btn-sm">
-          Login
+        <Link to="/login-admin" className="btn btn-primary btn-sm">
+          Admin
         </Link>
       </div>
     </nav>
@@ -117,6 +177,7 @@ function Landing() {
 
 function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -132,6 +193,7 @@ function Login() {
       : null;
 
     if (found) {
+      login();
       navigate("/lorawan");
     } else {
       setError("Username atau password salah.");
@@ -181,7 +243,83 @@ function Login() {
             Login
           </button>
           <Link className="btn btn-outline btn-sm" to="/">
-            Kembali ke landing
+            Kembali ke Home
+          </Link>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function LoginAdmin() {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError(null);
+
+    const found = Array.isArray(usersData.admin)
+      ? usersData.admin.find(
+          (u) => (u.username || "").trim() === username.trim() && (u.password || "") === password
+        )
+      : null;
+
+    if (found) {
+      login();
+      navigate("/lorawan-admin");
+    } else {
+      setError("Username atau password salah.");
+    }
+  };
+
+  return (
+    <section className="section">
+      <div className="panel-header">
+        <div>
+          <h2 className="panel-title">Login Admin</h2>
+          <p className="panel-subtitle">
+            Masuk sebagai admin untuk mengelola sistem LoRaWAN UMS.
+          </p>
+        </div>
+      </div>
+
+      <form className="form" onSubmit={handleSubmit}>
+        <div>
+          <div className="label">Username</div>
+          <input
+            className="input"
+            type="text"
+            placeholder="Masukkan username"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <div className="label">Password</div>
+          <input
+            className="input"
+            type="password"
+            placeholder="Masukkan password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+
+        {error && <div className="form-error">{error}</div>}
+
+        <div className="form-footer">
+          <button className="btn btn-primary" type="submit">
+            Login
+          </button>
+          <Link className="btn btn-outline btn-sm" to="/">
+            Kembali ke Home
           </Link>
         </div>
       </form>
@@ -433,6 +571,341 @@ function LorawanDashboard() {
     </section>
   );
 }
+
+function LorawanAdmin() {
+  const [devices, setDevices] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [expandedDeviceId, setExpandedDeviceId] = React.useState(null);
+  const [filterDays, setFilterDays] = React.useState(null);
+
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+  const API_KEY = import.meta.env.VITE_API_KEY || "";
+
+  const getElapsedTime = (lastSeenSort) => {
+    if (lastSeenSort <= 0) return "-";
+    
+    const now = Date.now();
+    const elapsedMs = now - lastSeenSort;
+    const elapsedSec = Math.floor(elapsedMs / 1000);
+    
+    if (elapsedSec < 0) return "-";
+    
+    const minutes = Math.floor(elapsedSec / 60);
+    const seconds = elapsedSec % 60;
+    
+    // Jika lebih dari 90 menit, tampilkan "-"
+    if (minutes > 90) return "-";
+    
+    return `${minutes}m ${seconds}s`;
+  };
+
+  const formatFrequency = (freq) => {
+    if (!freq || freq === "-") return "-";
+    const freqNum = Number(freq);
+    if (isNaN(freqNum)) return String(freq);
+    // Convert Hz to MHz
+    const mhz = (freqNum / 1000000).toFixed(2);
+    return `${mhz} MHz`;
+  };
+
+  const formatDataJson = (dataJson) => {
+    if (!dataJson) return "-";
+    try {
+      const jsonStr = typeof dataJson === 'string' ? dataJson : JSON.stringify(dataJson);
+      // Truncate to reasonable length for display
+      return jsonStr.length > 50 ? jsonStr.substring(0, 47) + "..." : jsonStr;
+    } catch (e) {
+      return String(dataJson);
+    }
+  };
+
+  const isDeviceOlderThanDays = (lastSeenSort, days) => {
+    if (lastSeenSort <= 0) return true; // Show old devices if no timestamp
+    const now = Date.now();
+    const daysInMs = days * 24 * 60 * 60 * 1000;
+    return (now - lastSeenSort) > daysInMs;
+  };
+
+  const getFilteredDevices = () => {
+    if (!filterDays) return devices;
+    return devices.filter(d => !isDeviceOlderThanDays(d.lastSeenSort, filterDays));
+  };
+
+  const fetchDeviceDetails = async (devEui) => {
+    try {
+      const url = new URL(`${API_BASE_URL}/uplinks/${encodeURIComponent(devEui)}/latest/full`);
+      url.searchParams.set("api_key", API_KEY);
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          Accept: "application/json",
+          "X-API-KEY": API_KEY,
+        },
+      });
+
+      if (!res.ok) {
+        console.warn(`Failed to fetch details for ${devEui}: status ${res.status}`);
+        return null;
+      }
+
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      console.error(`Error fetching details for ${devEui}:`, err);
+      return null;
+    }
+  };
+
+  const normalizeDevices = (data) => {
+    if (!data) return [];
+
+    let arr = Array.isArray(data)
+      ? data
+      : Array.isArray(data.devices)
+      ? data.devices
+      : [];
+
+    return arr.map((d, index) => ({
+      id: d.id || d.uplink_id || d.dev_eui || index,
+      eui: d.dev_eui || d.deveui || d.devEui || "-",
+    }));
+  };
+
+  const fetchDevices = async () => {
+    if (!API_BASE_URL || !API_KEY) {
+      setError("Konfigurasi API (URL atau API key) belum lengkap.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setDevices([]);
+
+    try {
+      const url = new URL(`${API_BASE_URL}/uplinks/devices`);
+      url.searchParams.set("api_key", API_KEY);
+
+      console.log("Fetching devices from:", url.toString());
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          Accept: "application/json",
+          "X-API-KEY": API_KEY,
+        },
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          setError("API key tidak valid atau tidak dikirim ke server.");
+        } else {
+          setError(`Gagal memuat daftar perangkat (status ${res.status}).`);
+        }
+        return;
+      }
+
+      const data = await res.json();
+      console.log("Devices list response:", data);
+
+      const deviceList = normalizeDevices(data);
+
+      if (!deviceList.length) {
+        setError("Belum ada perangkat yang tercatat pada API ini.");
+        return;
+      }
+
+      console.log(`Found ${deviceList.length} devices, fetching details...`);
+
+      // Fetch detail untuk setiap device
+      const detailedDevices = await Promise.all(
+        deviceList.map(async (d) => {
+          const details = await fetchDeviceDetails(d.eui);
+          if (!details) {
+            console.warn(`No details for device ${d.eui}`);
+            return null;
+          }
+
+          const rawLastSeen =
+            details.last_seen || details.ts || details.inserted_at || details.updated_at || null;
+
+          const lastSeenLabel = rawLastSeen ? String(rawLastSeen) : "-";
+          let lastSeenSort = 0;
+          if (rawLastSeen) {
+            const t = new Date(rawLastSeen).getTime();
+            lastSeenSort = Number.isFinite(t) ? t : 0;
+          }
+
+          return {
+            id: d.id,
+            name: details.device_name || details.name || "-",
+            eui: d.eui,
+            appName: details.app_name || details.application_name || "-",
+            frequency: details.freq_hz || details.frequency || details.freq || "-",
+            dataJson: details.data_json || details.data || null,
+            lastSeenLabel: rawLastSeen ? String(rawLastSeen) : "-",
+            lastSeenSort,
+          };
+        })
+      );
+
+      // Filter out null values dan urutkan dari last seen terbaru
+      const validDevices = detailedDevices.filter((d) => d !== null);
+      validDevices.sort((a, b) => {
+        // Prioritas: device dengan lastSeenSort valid (> 0) di atas
+        if (a.lastSeenSort > 0 && b.lastSeenSort > 0) {
+          return b.lastSeenSort - a.lastSeenSort; // Terbaru duluan
+        }
+        if (a.lastSeenSort > 0) return -1; // a punya timestamp, di atas
+        if (b.lastSeenSort > 0) return 1;  // b punya timestamp, di atas
+        return 0; // Keduanya tidak punya timestamp
+      });
+
+      console.log(`Loaded ${validDevices.length} devices with details`);
+
+      if (!validDevices.length) {
+        setError("Gagal memuat detail perangkat atau tidak ada data yang valid.");
+        return;
+      }
+
+      setDevices(validDevices);
+    } catch (err) {
+      console.error("Error fetching devices:", err);
+      setError("Terjadi kesalahan jaringan atau CORS saat memuat perangkat.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="section section--ghost">
+      <div className="section-header">
+        <h2 className="section-title">
+          LoRaWAN <span>Admin</span>
+        </h2>
+        <p className="section-subtitle">
+          Halaman admin untuk melihat daftar end-device LoRaWAN yang terhubung ke
+          gateway. Data diurutkan berdasarkan waktu komunikasi terakhir (last seen).
+        </p>
+      </div>
+
+      <div className="btn-row" style={{ marginBottom: 10 }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={fetchDevices}
+          disabled={loading}
+        >
+          {loading ? "Mengambil data perangkat..." : "Akses daftar perangkat"}
+        </button>
+      </div>
+
+      {error && <div className="alert alert--error">{error}</div>}
+
+      {devices.length > 0 && (
+        <div className="uplinks-table" style={{ maxHeight: "none" }}>
+          <div className="uplinks-header-row" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
+            <div className="uplinks-header-cell">Nama</div>
+            <div className="uplinks-header-cell">DevEUI</div>
+            <div className="uplinks-header-cell">App Name</div>
+            <div className="uplinks-header-cell">Last Seen</div>
+            <div className="uplinks-header-cell">Frequency</div>
+            <div className="uplinks-header-cell">Data JSON</div>
+            <div className="uplinks-header-cell uplinks-header-cell--center">Detail</div>
+          </div>
+
+          {getFilteredDevices().map((d) => (
+            <React.Fragment key={d.id}>
+              <div className="uplinks-row" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
+                <div className="uplinks-cell uplinks-cell--center">{d.name}</div>
+                <div className="uplinks-cell uplinks-cell--center uplinks-cell--mono">{d.eui}</div>
+                <div className="uplinks-cell uplinks-cell--center">{d.appName}</div>
+                <div className="uplinks-cell uplinks-cell--center">{getElapsedTime(d.lastSeenSort)}</div>
+                <div className="uplinks-cell uplinks-cell--center">{formatFrequency(d.frequency)}</div>
+                <div className="uplinks-cell uplinks-cell--center uplinks-cell--mono uplinks-cell--collapsed" title={d.dataJson ? (typeof d.dataJson === 'string' ? d.dataJson : JSON.stringify(d.dataJson, null, 2)) : "-"}>
+                  {formatDataJson(d.dataJson)}
+                </div>
+                <div className="uplinks-cell uplinks-cell--center">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => setExpandedDeviceId(expandedDeviceId === d.id ? null : d.id)}
+                  >
+                    {expandedDeviceId === d.id ? "Hide" : "View"}
+                  </button>
+                </div>
+              </div>
+
+              {expandedDeviceId === d.id && (
+                <div className="uplink-details">
+                  <div className="uplink-details-meta">
+                    <strong>Data JSON</strong> — {d.name} ({d.eui})
+                  </div>
+                  <pre className="uplink-details-pre">{d.dataJson ? (typeof d.dataJson === 'string' ? d.dataJson : JSON.stringify(d.dataJson, null, 2)) : "Tidak ada data"}</pre>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {devices.length > 0 && (
+        <div style={{ marginTop: '15px', marginBottom: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontWeight: '600', fontSize: '13px' }}>Filter:</span>
+            {[1, 3, 7, 14, 30].map(days => (
+              <button
+                key={days}
+                type="button"
+                style={{
+                  backgroundColor: filterDays === days ? '#0078d4' : '#f0f0f0',
+                  color: filterDays === days ? 'white' : '#333',
+                  border: filterDays === days ? 'none' : '1px solid #ddd',
+                  borderRadius: '4px',
+                  padding: '5px 10px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: filterDays === days ? '600' : '500',
+                  transition: 'all 0.2s'
+                }}
+                onClick={() => setFilterDays(days)}
+              >
+                {days}d
+              </button>
+            ))}
+            {filterDays && (
+              <button
+                type="button"
+                style={{
+                  backgroundColor: '#fff',
+                  color: '#666',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  padding: '5px 10px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+                onClick={() => setFilterDays(null)}
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
+          <span style={{ fontSize: '12px', color: '#999', fontWeight: '500' }}>
+            {getFilteredDevices().length} / {devices.length}
+          </span>
+        </div>
+      )}
+
+      {devices.length > 0 && getFilteredDevices().length === 0 && (
+        <div className="alert alert--info" style={{ marginTop: '15px' }}>
+          Tidak ada perangkat yang sesuai filter. Coba ubah filter atau klik Clear untuk melihat semua data.
+        </div>
+      )}
+    </section>
+  );
+}
+
 
 
 export default App;
