@@ -16,7 +16,6 @@
 
 - [🎯 Overview](#-overview)
 - [✨ Fitur Utama](#-fitur-utama)
-- [🚦 Quick Start](#-quick-start)
 - [🔐 Autentikasi](#-autentikasi)
 - [📡 Endpoints](#-endpoints)
   - [📱 Devices Management](#-devices-management)

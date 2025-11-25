@@ -152,7 +152,7 @@ function Landing() {
         <Link className="btn btn-primary" to="/login">
           Masuk ke Dashboard
         </Link>
-        <Link className="btn btn-outline" type="button" to="https://github.com/rndmtrsh" target={"_blank"} >
+        <Link className="btn btn-outline" type="button" to="https://github.com/rndmtrsh/NS-lorawanUMS" target={"_blank"} >
           Lihat Dokumentasi API
         </Link>
       </div>
